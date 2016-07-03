@@ -85,7 +85,46 @@ check_cpuid:
     mov al, "1"
     jmp error
 
-section .bss
+set_up_page_tables:
+	;map first p4 entry to to p3 table
+	move eax, p3_table
+	or eax, 0b11 ;exists and is writable
+	mov [p4_table], eax
+	
+	;map first p3 table entry to p2 table
+	move eax, p2_table
+	or eax, 0bb11;exists and is writeable
+	mov [p3_table], eax
+
+	mov ecx, 0 ;set the counter variable to 0
+	ret
+
+.map_p2_table:
+	;map ecx-th P2 entry to a huge a huge page that starts at address 2MiB*ecx
+	mov eax, 0x200000
+	mul ecx	;start address of ecx-th page
+	or eax, 0b10000011 ;present + writable and is a huge page	
+	mov [p2_table + ecx * 8], eax ; map the entry	
+	
+	inc ecx		;increment counter
+	cmp ecx, 512	;if counter ==512, the whole P2 table is mapped
+	jne .map_p2_table	;else map the next entry
+	
+	ret
+	
+section .bss;These are our page tables
+align 4096
+p4_table:
+    resb 4096
+p3_table:
+    resb 4096
+p2_table:
+    resb 4096
+stack_bottom:
+    resb 64
+stack_top:
+
+
 stack_bottom:
 	resb 64
 stack_top:
