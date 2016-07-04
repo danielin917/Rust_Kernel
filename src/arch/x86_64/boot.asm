@@ -1,5 +1,5 @@
 global start
-
+extern long_mode_start
 ;;REFERENCE:0xb8000 is the start of the VGA text buffer
 
 
@@ -16,6 +16,13 @@ start:
 	call enable_paging
 	
 	lgdt [gdt64.pointer];Load global destriptor pointer
+	
+	mov ax, gdt64.data;load selector registers
+	mov ss, ax;stack selector
+	mov ds, ax;data selector
+	mov es, ax;extra selector
+	
+	jmp gdt64.code:long_mode_start; only way to reload the code selector is a far jump or far return
 	;print ok to screen
 	mov dword [0xb8000], 0x2f4b2f4f
 	hlt
@@ -140,7 +147,9 @@ section .rodata;read only data section
 gdt64: ;Global descriptor table, needed to to execute 64 bit code. We don't actually use segmentation though we use paging but GDT is still required.
 	;GDT starts with zero entry and then arbitrary amount of  segments after
 	dq 0 ;the zero entry (define quad outputs a 64 bit constant
+.code: equ $ -gdt64
 	dq (1<<44) | (1<<47) | (1<<41) | (1<<43) | (1<<53) ;code segment
+.data: equ $ -gdt64
 	dq (1<<44) | (1<<47) | (1<<41); data segment
 .pointer:;labels that begin with a point (.pointer) are sub labels of the last label without a point (gdt64.pointer to access)
 	dw $ - gdt64 - 1;$is replaced with current address. We are loading a special pointer to the load gdt instdtruction (lgdt)
