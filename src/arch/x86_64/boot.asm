@@ -11,6 +11,11 @@ start:
 	call check_multiboot
 	call check_cpuid
 	call check_long_mode
+	
+	call set_up_page_tables
+	call enable_paging
+	
+	lgdt [gdt64.pointer];Load global destriptor pointer
 	;print ok to screen
 	mov dword [0xb8000], 0x2f4b2f4f
 	hlt
@@ -87,21 +92,19 @@ check_cpuid:
 
 set_up_page_tables:
 	;map first p4 entry to to p3 table
-	move eax, p3_table
+	mov eax, p3_table
 	or eax, 0b11 ;exists and is writable
 	mov [p4_table], eax
 	
 	;map first p3 table entry to p2 table
-	move eax, p2_table
-	or eax, 0bb11;exists and is writeable
+	mov eax, p2_table
+	or eax, 0b11;exists and is writeable
 	mov [p3_table], eax
 
 	mov ecx, 0 ;set the counter variable to 0
-	ret
-
 .map_p2_table:
 	;map ecx-th P2 entry to a huge a huge page that starts at address 2MiB*ecx
-	mov eax, 0x200000
+	mov eax, 0x200000; <---- page size
 	mul ecx	;start address of ecx-th page
 	or eax, 0b10000011 ;present + writable and is a huge page	
 	mov [p2_table + ecx * 8], eax ; map the entry	
@@ -111,7 +114,37 @@ set_up_page_tables:
 	jne .map_p2_table	;else map the next entry
 	
 	ret
-	
+enable_paging:
+	;load P4 to cr3 (this is where the computer looks for the highest page table)
+	mov eax, p4_table
+	mov cr3, eax
+
+	;enable PAE (physical address extension flag down in cr4
+	mov eax, cr4
+	or eax, 1 << 5
+	mov cr4, eax
+
+	; set long mode bit in EFER msr(model specific register)
+	mov ecx, 0xC0000080
+	rdmsr; read model specific register at address ecx
+	or eax, 1 << 8
+	wrmsr; write model specific register at address ecx
+
+	;enable paging in the cr0 register
+	mov eax, cr0
+	or eax, 1 << 31
+	mov cr0, eax
+
+	ret
+section .rodata;read only data section
+gdt64: ;Global descriptor table, needed to to execute 64 bit code. We don't actually use segmentation though we use paging but GDT is still required.
+	;GDT starts with zero entry and then arbitrary amount of  segments after
+	dq 0 ;the zero entry (define quad outputs a 64 bit constant
+	dq (1<<44) | (1<<47) | (1<<41) | (1<<43) | (1<<53) ;code segment
+	dq (1<<44) | (1<<47) | (1<<41); data segment
+.pointer:;labels that begin with a point (.pointer) are sub labels of the last label without a point (gdt64.pointer to access)
+	dw $ - gdt64 - 1;$is replaced with current address. We are loading a special pointer to the load gdt instdtruction (lgdt)
+	dq gdt64
 section .bss;These are our page tables
 align 4096
 p4_table:
@@ -122,10 +155,5 @@ p2_table:
     resb 4096
 stack_bottom:
     resb 64
-stack_top:
-
-
-stack_bottom:
-	resb 64
 stack_top:
 
