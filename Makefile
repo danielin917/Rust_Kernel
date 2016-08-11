@@ -17,7 +17,8 @@ clean:
 
 run: $(iso)
 	@qemu-system-x86_64 -cdrom $(iso)
-
+target ?= $(arch)-unknown-linux-gnu
+rust_os := target/$(target)/debug/librust_os.a
 iso: $(iso)
 
 $(iso): $(kernel) $(grub_cfg)
@@ -27,10 +28,15 @@ $(iso): $(kernel) $(grub_cfg)
 	@grub2-mkrescue -o $(iso) build/isofiles 2> /dev/null
 	@rm -r build/isofiles
 
-$(kernel): $(assembly_object_files) $(linker_script)
-	@ld -n -T $(linker_script) -o $(kernel) $(assembly_object_files)
+$(kernel): cargo $(rust_os) $(assembly_object_files) $(linker_script)
+	@ld -n --gc-sections -T $(linker_script) -o $(kernel)\
+	 $(assembly_object_files) $(rust_os)
+
+cargo:
+	@cargo build --target $(target)
 
 # compile assembly files
 build/arch/$(arch)/%.o: src/arch/$(arch)/%.asm
 	@mkdir -p $(shell dirname $@)
 	@nasm -felf64 $< -o $@
+
